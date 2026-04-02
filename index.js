@@ -5,6 +5,13 @@ const cheerio = require('cheerio');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.get('/', (req, res) => {
+    res.json({
+        message: 'Scraper is running',
+        usage: '/scrape?url=https://example.com'
+    });
+});
+
 // The Scraper Endpoint
 app.get('/scrape', async (req, res) => {
     const targetUrl = req.query.url; // You pass the URL as a parameter
