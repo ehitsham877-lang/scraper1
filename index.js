@@ -12,17 +12,39 @@ app.get('/', (req, res) => {
     });
 });
 
+function parseAndValidateUrl(rawUrl) {
+    try {
+        const parsedUrl = new URL(rawUrl);
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+            return null;
+        }
+        return parsedUrl.toString();
+    } catch {
+        return null;
+    }
+}
+
 // The Scraper Endpoint
 app.get('/scrape', async (req, res) => {
     const targetUrl = req.query.url; // You pass the URL as a parameter
 
     if (!targetUrl) {
-        return res.status(400).json({ error: "Please provide a URL" });
+        return res.status(400).json({ error: 'Please provide a URL' });
+    }
+
+    const validatedUrl = parseAndValidateUrl(targetUrl);
+    if (!validatedUrl) {
+        return res.status(400).json({
+            error: 'Please provide a valid http or https URL',
+            receivedUrl: targetUrl
+        });
     }
 
     try {
         // 1. Get the HTML from the website
-        const { data } = await axios.get(targetUrl, {
+        const { data } = await axios.get(validatedUrl, {
+            timeout: 15000,
+            maxRedirects: 5,
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
@@ -85,6 +107,7 @@ app.get('/scrape', async (req, res) => {
 
         // 4. Return the data as JSON
         res.json({
+            requestedUrl: validatedUrl,
             title: pageTitle,
             headers: headers,
             paragraphs: paragraphs,
@@ -100,7 +123,13 @@ app.get('/scrape', async (req, res) => {
         });
 
     } catch (error) {
-        res.status(500).json({ error: "Could not scrape the site. It might be blocking us." });
+        const upstreamStatus = error.response?.status;
+        res.status(upstreamStatus || 500).json({
+            error: 'Could not scrape the site',
+            details: error.message,
+            requestedUrl: validatedUrl,
+            upstreamStatus: upstreamStatus || null
+        });
     }
 });
 
