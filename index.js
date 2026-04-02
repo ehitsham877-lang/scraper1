@@ -1,4 +1,5 @@
 const express = require('express');
+const https = require('https');
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -24,6 +25,40 @@ function parseAndValidateUrl(rawUrl) {
     }
 }
 
+function isCertificateError(error) {
+    const message = error.message || '';
+    return (
+        message.includes('unable to get local issuer certificate') ||
+        message.includes('self-signed certificate') ||
+        message.includes('certificate has expired') ||
+        message.includes('UNABLE_TO_VERIFY_LEAF_SIGNATURE')
+    );
+}
+
+async function fetchPage(url) {
+    const requestConfig = {
+        timeout: 15000,
+        maxRedirects: 5,
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+    };
+
+    try {
+        return await axios.get(url, requestConfig);
+    } catch (error) {
+        if (!url.startsWith('https://') || !isCertificateError(error)) {
+            throw error;
+        }
+
+        // Retry once for hosts with incomplete certificate chains.
+        return axios.get(url, {
+            ...requestConfig,
+            httpsAgent: new https.Agent({ rejectUnauthorized: false })
+        });
+    }
+}
+
 // The Scraper Endpoint
 app.get('/scrape', async (req, res) => {
     const targetUrl = req.query.url; // You pass the URL as a parameter
@@ -42,13 +77,7 @@ app.get('/scrape', async (req, res) => {
 
     try {
         // 1. Get the HTML from the website
-        const { data } = await axios.get(validatedUrl, {
-            timeout: 15000,
-            maxRedirects: 5,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-        });
+        const { data } = await fetchPage(validatedUrl);
 
         // 2. Load the HTML into Cheerio
         const $ = cheerio.load(data);
